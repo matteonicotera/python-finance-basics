@@ -46,3 +46,25 @@ plt.xlabel("Strike price ($)")
 plt.ylabel("Option price ($)")
 plt.legend()
 plt.show()
+
+# Greeks 
+def calculate_greeks(S, K, T, r, sigma): 
+    d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+
+    delta_call = stats.norm.cdf(d1)
+    gamma = stats.norm.pdf(d1) / (S * sigma * np.sqrt(T))
+    vega = S * stats.norm.pdf(d1) * np.sqrt(T)
+    theta_call = -(S * stats.norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * stats.norm.cdf(d2)
+
+    return delta_call, gamma, vega, theta_call
+
+delta, gamma, vega, theta = calculate_greeks(S, K, T, r, sigma)
+
+print()
+print("Greeks")
+print("------------------------------")
+print("Delta", round(delta, 4))
+print("Gamma", round(gamma, 6))
+print("Vega", round(vega, 4))
+print("Theta", round(theta, 4))
