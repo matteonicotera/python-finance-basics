@@ -56,31 +56,55 @@ for i in range(n_portfolios):
 
 print("Simulation done")
 print("Best return found :", round(max(portfolio_returns) * 100, 2), "%")
-print("Lowest volatility found : ", round(min(portfolio_returns) * 100, 2), "%")
+print("Lowest volatility found : ", round(min(portfolio_volatilities) * 100, 2), "%")
 
-# Find the best portfolio (highest Sharpe ratio)
-sharpe_ratios = [(r - 0.05) / v for r , v in zip(portfolio_returns, portfolio_volatilities)]
+# Find Monte Carlo best portfolio
+sharpe_ratios = [(r - 0.05) / v for r, v in zip(portfolio_returns, portfolio_volatilities)]
 best_idx = sharpe_ratios.index(max(sharpe_ratios))
 best_weights = portfolio_weights[best_idx]
 
-print("Optimal portfolio (best Sharpe ratio)")
-print("Eli Lilly:          ", round(best_weights[0] * 100, 2), "%")
-print("TSMC:               ", round(best_weights[1] * 100, 2), "%")
-print("Schneider Electric: ", round(best_weights[2] * 100, 2), "%")
-print("Expected return:    ", round(portfolio_returns[best_idx] * 100, 2), "%")
-print("Volatility:         ", round(portfolio_volatilities[best_idx] * 100, 2), "%")
-print("Sharpe ratio:       ", round(max(sharpe_ratios), 2))
+# scipy.optimize — exact optimal portfolio
+from scipy.optimize import minimize
 
-# Plot efficient frontier 
+def neg_sharpe(weights):
+    port_return = np.sum(weights * returns.mean() * 252)
+    port_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+    return -(port_return - 0.05) / port_volatility
+
+constraints = {"type": "eq", "fun": lambda x: np.sum(x) - 1}
+bounds = tuple((0, 1) for _ in range(3))
+initial_weights = [1/3, 1/3, 1/3]
+
+result = minimize(neg_sharpe, initial_weights, method="SLSQP",bounds=bounds, constraints=constraints)
+optimal_weights = result.x
+
+exact_return = np.sum(optimal_weights * returns.mean() * 252)
+exact_volatility = np.sqrt(np.dot(optimal_weights.T, np.dot(cov_matrix, optimal_weights)))
+
+# Plot everything together
 plt.figure(figsize=(10, 6))
-scatter = plt.scatter(portfolio_volatilities, portfolio_returns, c=sharpe_ratios, cmap="viridis", alpha = 0.5)
+scatter = plt.scatter(portfolio_volatilities, portfolio_returns,c=sharpe_ratios, cmap="viridis", alpha=0.5)
 plt.colorbar(scatter, label="Sharpe Ratio")
-
-# Hightlight the optimal portfolio
-plt.scatter(portfolio_volatilities[best_idx], portfolio_returns[best_idx], color="red", marker="*", s=300, label= "Optimal portfolio")
-
+plt.scatter(portfolio_volatilities[best_idx], portfolio_returns[best_idx],color="red", marker="*", s=300, label="Monte Carlo optimal")
+plt.scatter(exact_volatility, exact_return,color="cyan", marker="*", s=300, label="Exact optimal (scipy)")
 plt.xlabel("Volatility (Risk)")
 plt.ylabel("Annual Return")
 plt.title("Markowitz Efficient Frontier - LLY, TSM, SU.PA")
 plt.legend()
 plt.show()
+
+# Print results
+print("Monte Carlo Optimal Portfolio:")
+print(f"Eli Lilly:           {best_weights[0]*100:.2f}%")
+print(f"TSMC:                {best_weights[1]*100:.2f}%")
+print(f"Schneider Electric:  {best_weights[2]*100:.2f}%")
+print(f"Sharpe Ratio:        {max(sharpe_ratios):.2f}")
+print()
+print("True Optimal Portfolio (scipy.optimize):")
+print("-" * 45)
+print(f"Eli Lilly:           {optimal_weights[0]*100:.2f}%")
+print(f"TSMC:                {optimal_weights[1]*100:.2f}%")
+print(f"Schneider Electric:  {optimal_weights[2]*100:.2f}%")
+print(f"Expected Return:     {exact_return*100:.2f}%")
+print(f"Volatility:          {exact_volatility*100:.2f}%")
+print(f"Sharpe Ratio:        {(-result.fun):.2f}")
