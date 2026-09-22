@@ -1,12 +1,17 @@
+import warnings
+warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import yfinance as yf
 
 # Download real data for Eli Lilly
-data = yf.download("LLY", period="2y")["Close"]
-data = pd.DataFrame(data)
-data.columns = ["Close"]
+raw = yf.download("LLY", period="2y")
+data = pd.DataFrame()
+data["Close"] = raw["Close"].squeeze()
+
+print(f"Data downloaded: {len(data)} trading days")
+data.head()
 
 # Calculate moving averages
 data["MA20"] = data["Close"].rolling(window=20).mean()
