@@ -1,46 +1,70 @@
+"""
+13 - Value at Risk (VaR) and Conditional VaR (CVaR) on Eli Lilly
+
+Method: historical simulation on daily returns.
+Assumptions:
+  - the position is kept at PORTFOLIO_VALUE every day (daily P&L = return x value)
+  - simple daily returns from adjusted closing prices (yfinance default)
+  - horizon: 1 day
+VaR and CVaR are printed as positive numbers: they are losses in dollars.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import yfinance as yf
 from scipy import stats
 
-# Download real data for Eli Lilly (fixed dates so results are reproducible)
-data = yf.download("LLY", start="2024-11-01", end="2026-11-01")["Close"]
+# Parameters (fixed dates so results are reproducible) 
+TICKER = "LLY"
+START = "2024-11-01"
+END = "2026-11-01"          # the end date is excluded by yfinance
+PORTFOLIO_VALUE = 100000    # $100,000 invested
+CONFIDENCE_LEVEL = 0.95
+
+
+def historical_var(pnl, confidence):
+    """Loss exceeded on only (1 - confidence) of the days."""
+    # np.percentile expects a number between 0 and 100, hence the factor 100
+    return -np.percentile(pnl, 100 * (1 - confidence))
+
+
+def historical_cvar(pnl, confidence):
+    """Average loss on the days where the loss is beyond the VaR."""
+    var = historical_var(pnl, confidence)
+    return -pnl[pnl <= -var].mean()
+
+
+# Data and daily P&L
+data = yf.download(TICKER, start=START, end=END)["Close"]
 returns = data.pct_change().dropna().squeeze()
+daily_pnl = returns * PORTFOLIO_VALUE
 
-# Portfolio value
-portfolio_value = 100000  # $100,000 invested
+# VaR and CVaR 
+var_95 = historical_var(daily_pnl, CONFIDENCE_LEVEL)
+cvar_95 = historical_cvar(daily_pnl, CONFIDENCE_LEVEL)
 
-# Daily profit and loss in dollars
-daily_pnl = returns * portfolio_value
-
-# VaR at 95% confidence level (historical method)
-confidence_level = 0.95
-var_95 = -np.percentile(daily_pnl, 100 * (1 - confidence_level))
-
-# CVaR: average loss on the days beyond the VaR
-cvar_95 = -daily_pnl[daily_pnl <= -var_95].mean()
-
-print("Portfolio Value: $100,000 invested in Eli Lilly")
+print(f"Portfolio Value: ${PORTFOLIO_VALUE:,} invested in Eli Lilly")
 print("-" * 45)
-print(f"VaR  (95%): ${round(var_95, 2)}")
-print(f"CVaR (95%): ${round(cvar_95, 2)}")
+print(f"VaR  (95%): ${var_95:,.2f}")
+print(f"CVaR (95%): ${cvar_95:,.2f}")
 
-# Sanity checks
+# Sanity checks 
 sigma = float(returns.std())
 mu = float(returns.mean())
-z = stats.norm.ppf(confidence_level)
+z = stats.norm.ppf(CONFIDENCE_LEVEL)
 
 print()
 print("Sanity checks")
 print("-" * 45)
-print(f"Daily volatility:        {round(sigma * 100, 3)} %")
-print(f"Normal approx VaR:       ${round(z * sigma * portfolio_value, 2)}")
-param_var = -(mu - z * sigma) * portfolio_value
-print(f"Parametric VaR:          ${round(param_var, 2)}")
-share = float((daily_pnl < -var_95).mean())
-print(f"Days beyond VaR:         {round(share * 100, 2)} %  (should be about 5%)")
-normal_ratio = stats.norm.pdf(z) / (1 - confidence_level) / z
-print(f"CVaR/VaR ratio:          {round(cvar_95 / var_95, 2)}  (normal distribution: {round(normal_ratio, 2)})")
+print(f"Daily volatility:        {sigma * 100:.3f} %")
+print(f"Normal approx VaR:       ${z * sigma * PORTFOLIO_VALUE:,.2f}")
+param_var = -(mu - z * sigma) * PORTFOLIO_VALUE
+print(f"Parametric VaR:          ${param_var:,.2f}")
+# This only checks the code: with the historical method, the share is about 5% by construction
+share = float((daily_pnl <= -var_95).mean())
+print(f"Days beyond VaR:         {share * 100:.2f} %  (about 5% by construction)")
+normal_ratio = stats.norm.pdf(z) / (1 - CONFIDENCE_LEVEL) / z
+print(f"CVaR/VaR ratio:          {cvar_95 / var_95:.2f}  (normal distribution: {normal_ratio:.2f})")
 print("CVaR > VaR:", cvar_95 > var_95)
 
 # Extreme days
@@ -55,17 +79,22 @@ tail = daily_pnl[daily_pnl <= -var_95]
 print()
 print("Days in the tail:", len(tail))
 print("Share of tail loss from the 3 worst days:",
-round(float(tail.nsmallest(3).sum() / tail.sum()) * 100, 1), "%")
+f"{float(tail.nsmallest(3).sum() / tail.sum()) * 100:.1f} %")
 
-# Plot distribution of daily P&L with VaR and CVaR
+# Plot: distribution of daily P&L with VaR, CVaR and a normal curve ---
 plt.figure(figsize=(10, 6))
-plt.hist(daily_pnl, bins=50, color="blue", edgecolor="black", alpha=0.7)
-plt.axvline(x=-var_95, color="red", linestyle="--", label=f"VaR 95%: ${round(var_95, 0)}")
-plt.axvline(x=-cvar_95, color="orange", linestyle="--", label=f"CVaR 95%: ${round(cvar_95, 0)}")
+plt.hist(daily_pnl, bins=50, density=True, color="blue", edgecolor="black", alpha=0.7,
+         label="Daily P&L")
+x = np.linspace(daily_pnl.min(), daily_pnl.max(), 300)
+plt.plot(x, stats.norm.pdf(x, daily_pnl.mean(), daily_pnl.std()), color="black",
+         label="Normal curve (same mean and volatility)")
+plt.axvline(x=-var_95, color="red", linestyle="--", label=f"VaR 95%: ${var_95:,.0f}")
+plt.axvline(x=-cvar_95, color="orange", linestyle="--", label=f"CVaR 95%: ${cvar_95:,.0f}")
 plt.title("Eli Lilly: Daily P&L Distribution with VaR and CVaR")
 plt.xlabel("Daily P&L ($)")
-plt.ylabel("Frequency")
+plt.ylabel("Density")
 plt.legend()
+plt.savefig("13_var_cvar.png", dpi=150, bbox_inches="tight")
 plt.show()
 
 
